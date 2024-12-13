@@ -1,6 +1,7 @@
 - name: Backup Mikrotik SwitchOs Configuration
   hosts: swos_devices
   gather_facts: false
+  connection: local
 
   vars:
     backup_directory: "/ansible/backup"

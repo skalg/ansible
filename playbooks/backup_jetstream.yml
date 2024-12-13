@@ -1,6 +1,7 @@
 - name: Backup TP-Link Jetstream Configuration
   hosts: jetstream_devices
   gather_facts: false
+  connection: local
 
   vars:
     login_url: "http://{{ ansible_host }}/data/login.json"

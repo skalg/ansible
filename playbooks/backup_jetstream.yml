@@ -5,7 +5,7 @@
   vars:
     login_url: "http://{{ ansible_host }}/data/login.json"
     backup_url_template: "http://{{ ansible_host }}/data/sysConfigBackup.cfg?operation=write&unit_id=0&_tid_={{ tid }}&usrLvl=3"
-    backup_file: "/ansible/backup/sysConfigBackup.cfg"
+    backup_directory: "/ansible/backup"
 
   tasks:
     - name: Login to the switch and get _tid_
@@ -33,4 +33,4 @@
     - name: Download the backup file
       ansible.builtin.get_url:
         url: "{{ backup_url_template }}"
-        dest: "{{ backup_file }}"
+        dest: "{{ backup_directory }}/{{ ansible_host | replace('.', '_') }}_sysConfigBackup.cfg"

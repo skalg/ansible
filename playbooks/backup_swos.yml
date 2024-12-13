@@ -7,11 +7,19 @@
     backup_directory: "/ansible/backup"
 
   tasks:
-    - name: "Get backup with IP in filename"
-      ansible.builtin.get_url:
-        url: "http://{{ ansible_host }}/backup.swb"
-        url_username: admin
-        url_password: "{{ password }}"
-        validate_certs: false
-        dest: "{{ backup_directory }}/{{ ansible_host | replace('.', '_') }}_backup.swb"
-      delegate_to: localhost
+    - block:
+      - name: "Get backup with IP in filename"
+        ansible.builtin.get_url:
+          url: "http://{{ ansible_host }}/backup.swb"
+          url_username: admin
+          url_password: "{{ password }}"
+          validate_certs: false
+          dest: "{{ backup_directory }}/{{ ansible_host | replace('.', '_') }}_backup.swb"
+        delegate_to: localhost
+
+      rescue:
+        - name: A task failed, sending notification to teams
+          include_tasks: notify_teams.yml
+          vars:
+            failed_task: "{{ ansible_failed_task.name | default('Unknown Task') }}"
+            failed_host: "{{ ansible_host }}"

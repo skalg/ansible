@@ -1,0 +1,49 @@
+- name: Send notification to Microsoft Teams with Full-Width Adaptive Card
+  uri:
+    url: "https://xxxxx.webhook.office.com/xxxxxxxxx"
+    method: POST
+    headers:
+      Content-Type: "application/json"
+    body: |
+      {
+        "type": "message",
+        "attachments": [
+          {
+            "contentType": "application/vnd.microsoft.card.adaptive",
+            "contentUrl": null,
+            "content": {
+              "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+              "type": "AdaptiveCard",
+              "version": "1.2",
+              "body": [
+                {
+                  "type": "Container",
+                  "items": [
+                    {
+                      "type": "TextBlock",
+                      "text": "Task '{{ failed_task }}' failed.",
+                      "size": "Large",
+                      "weight": "Bolder"
+                    },
+                    {
+                      "type": "TextBlock",
+                      "text": "Host: '{{ failed_host }}'.",
+                      "wrap": true
+                    },
+                    {
+                      "type": "TextBlock",
+                      "text": "Check logs for details.",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ],
+              "msteams": {
+                "width": "Full"
+              }
+            }
+          }
+        ]
+      }
+    body_format: json
+  delegate_to: localhost

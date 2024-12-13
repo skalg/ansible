@@ -9,29 +9,37 @@
     backup_directory: "/ansible/backup"
 
   tasks:
-    - name: Login to the switch and get _tid_
-      ansible.builtin.uri:
-        url: "{{ login_url }}"
-        method: POST
-        headers:
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          username: admin
-          password: "{{ password }}"
-          operation: "write"
-        return_content: true
-      register: login_response
-
-    - name: Extract _tid_ from the login response
-      ansible.builtin.set_fact:
-        tid: "{{ login_response.json.data._tid_ }}"
-
-    - name: Debug the extracted _tid_ (optional, for verification)
-      ansible.builtin.debug:
-        msg: "Extracted _tid_: {{ tid }}"
-
-    - name: Download the backup file
-      ansible.builtin.get_url:
-        url: "{{ backup_url_template }}"
-        dest: "{{ backup_directory }}/{{ ansible_host | replace('.', '_') }}_sysConfigBackup.cfg"
+    - block:
+      - name: Login to the switch and get _tid_
+        ansible.builtin.uri:
+          url: "{{ login_url }}"
+          method: POST
+          headers:
+            Content-Type: "application/json"
+          body_format: json
+          body:
+            username: admin
+            password: "{{ password }}"
+            operation: "write"
+          return_content: true
+        register: login_response
+  
+      - name: Extract _tid_ from the login response
+        ansible.builtin.set_fact:
+          tid: "{{ login_response.json.data._tid_ }}"
+  
+      - name: Debug the extracted _tid_ (optional, for verification)
+        ansible.builtin.debug:
+          msg: "Extracted _tid_: {{ tid }}"
+  
+      - name: Download the backup file
+        ansible.builtin.get_url:
+          url: "{{ backup_url_template }}"
+          dest: "{{ backup_directory }}/{{ ansible_host | replace('.', '_') }}_sysConfigBackup.cfg"
+          
+      rescue:
+        - name: A task failed, sending notification to teams
+          include_tasks: notify_teams.yml
+          vars:
+            failed_task: "{{ ansible_failed_task.name | default('Unknown Task') }}"
+            failed_host: "{{ ansible_host }}"

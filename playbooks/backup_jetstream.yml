@@ -1,0 +1,36 @@
+- name: Backup TP-Link Jetstream Configuration
+  hosts: jetstream_devices
+  gather_facts: false
+
+  vars:
+    login_url: "http://{{ ansible_host }}/data/login.json"
+    backup_url_template: "http://{{ ansible_host }}/data/sysConfigBackup.cfg?operation=write&unit_id=0&_tid_={{ tid }}&usrLvl=3"
+    backup_file: "/ansible/backup/sysConfigBackup.cfg"
+
+  tasks:
+    - name: Login to the switch and get _tid_
+      ansible.builtin.uri:
+        url: "{{ login_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          username: admin
+          password: "{{ password }}"
+          operation: "write"
+        return_content: true
+      register: login_response
+
+    - name: Extract _tid_ from the login response
+      ansible.builtin.set_fact:
+        tid: "{{ login_response.json.data._tid_ }}"
+
+    - name: Debug the extracted _tid_ (optional, for verification)
+      ansible.builtin.debug:
+        msg: "Extracted _tid_: {{ tid }}"
+
+    - name: Download the backup file
+      ansible.builtin.get_url:
+        url: "{{ backup_url_template }}"
+        dest: "{{ backup_file }}"

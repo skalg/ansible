@@ -1,6 +1,7 @@
 - name: Backup MikroTik RouterOS Device
   hosts: mikrotik_devices
   gather_facts: false
+  connection: local
 
   vars:
     local_backup_directory: "/ansible/backup"

@@ -1,0 +1,16 @@
+- name: Backup Mikrotik SwitchOs Configuration
+  hosts: swos_devices
+  gather_facts: false
+
+  vars:
+    backup_directory: "/ansible/backup"
+
+  tasks:
+    - name: "Get backup with IP in filename"
+      ansible.builtin.get_url:
+        url: "http://{{ ansible_host }}/backup.swb"
+        url_username: admin
+        url_password: "{{ password }}"
+        validate_certs: false
+        dest: "{{ backup_directory }}/{{ ansible_host | replace('.', '_') }}_backup.swb"
+      delegate_to: localhost

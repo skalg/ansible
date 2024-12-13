@@ -17,6 +17,6 @@
 
     - name: Save export output to a local file
       ansible.builtin.copy:
-        dest: "{{ local_backup_directory }}/{{ ansible_host }}_routeros_export.rsc"
+        dest: "{{ local_backup_directory }}/{{ ansible_host | replace('.', '_') }}_routeros_export.rsc"
         content: "{{ export_output.stdout }}"
       delegate_to: localhost

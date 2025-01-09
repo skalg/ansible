@@ -12,7 +12,7 @@
       - name: Run /export command and capture output
         ansible.builtin.raw: >
           sshpass -p '{{ ansible_password }}'
-          ssh -o StrictHostKeyChecking=no {{ ansible_user }}@{{ ansible_host }} /export
+          ssh -o StrictHostKeyChecking=no {{ ansible_user }}@{{ ansible_host }} /export show-sensitive
         register: export_output
         delegate_to: localhost
   

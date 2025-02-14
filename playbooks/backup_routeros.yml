@@ -9,22 +9,38 @@
 
   tasks:
     - block:
-      - name: Run /export command and capture output
-        ansible.builtin.raw: >
-          sshpass -p '{{ ansible_password }}'
-          ssh -o StrictHostKeyChecking=no {{ ansible_user }}@{{ ansible_host }} /export show-sensitive
-        register: export_output
-        delegate_to: localhost
-  
-      - name: Save export output to a local file
-        ansible.builtin.copy:
-          dest: "{{ local_backup_directory }}/{{ ansible_host | replace('.', '_') }}_routeros_export.rsc"
-          content: "{{ export_output.stdout }}"
-        delegate_to: localhost
-        
+        - name: Try running /export show-sensitive command
+          ansible.builtin.raw: >
+            sshpass -p '{{ ansible_password }}' 
+            ssh -o StrictHostKeyChecking=no {{ ansible_user }}@{{ ansible_host }} /export show-sensitive
+          register: export_output
+          delegate_to: localhost
+
+        - name: Save export output to a local file
+          ansible.builtin.copy:
+            dest: "{{ local_backup_directory }}/{{ ansible_host | replace('.', '_') }}_routeros_export.rsc"
+            content: "{{ export_output.stdout }}"
+          delegate_to: localhost
+
       rescue:
-        - name: A task failed, sending notification to teams
+        - name: Fallback to /export without show-sensitive
+          ansible.builtin.raw: >
+            sshpass -p '{{ ansible_password }}' 
+            ssh -o StrictHostKeyChecking=no {{ ansible_user }}@{{ ansible_host }} /export
+          register: export_output_fallback
+          delegate_to: localhost
+          ignore_errors: true
+
+        - name: Save fallback export output to a local file
+          ansible.builtin.copy:
+            dest: "{{ local_backup_directory }}/{{ ansible_host | replace('.', '_') }}_routeros_export.rsc"
+            content: "{{ export_output_fallback.stdout }}"
+          delegate_to: localhost
+          when: export_output_fallback.rc == 0  # Save only if fallback succeeds
+
+        - name: A task failed, sending notification to Teams
           include_tasks: notify_teams.yml
           vars:
             failed_task: "{{ ansible_failed_task.name | default('Unknown Task') }}"
             failed_host: "{{ ansible_host }}"
+          when: export_output_fallback.rc != 0  # Notify only if both attempts fail

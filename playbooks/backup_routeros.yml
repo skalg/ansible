@@ -6,41 +6,118 @@
   vars:
     local_backup_directory: "/ansible/backup"
     ansible_user: admin
+    timestamp: "{{ lookup('pipe', 'date +%Y%m%d%H%M%S') }}"
 
   tasks:
     - block:
+
+        - name: Ensure backup_changed is defined
+          set_fact:
+            backup_changed: false
+
         - name: Try running /export show-sensitive command
-          ansible.builtin.raw: >
-            sshpass -p '{{ ansible_password }}' 
-            ssh -o StrictHostKeyChecking=no {{ ansible_user }}@{{ ansible_host }} /export show-sensitive
+          raw: >
+            sshpass -p '{{ ansible_password }}'
+            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 {{ ansible_user }}@{{ ansible_host }} /export show-sensitive
           register: export_output
-          delegate_to: localhost
-
-        - name: Save export output to a local file
-          ansible.builtin.copy:
-            dest: "{{ local_backup_directory }}/{{ ansible_host | replace('.', '_') }}_routeros_export.rsc"
-            content: "{{ export_output.stdout }}"
-          delegate_to: localhost
-
-      rescue:
-        - name: Fallback to /export without show-sensitive
-          ansible.builtin.raw: >
-            sshpass -p '{{ ansible_password }}' 
-            ssh -o StrictHostKeyChecking=no {{ ansible_user }}@{{ ansible_host }} /export
-          register: export_output_fallback
           delegate_to: localhost
           ignore_errors: true
 
-        - name: Save fallback export output to a local file
-          ansible.builtin.copy:
-            dest: "{{ local_backup_directory }}/{{ ansible_host | replace('.', '_') }}_routeros_export.rsc"
-            content: "{{ export_output_fallback.stdout }}"
+        - name: Run fallback /export if show-sensitive fails
+          raw: >
+            sshpass -p '{{ ansible_password }}'
+            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 {{ ansible_user }}@{{ ansible_host }} /export
+          register: export_output_fallback
+          when: export_output.rc is not defined or export_output.rc != 0
           delegate_to: localhost
-          when: export_output_fallback.rc == 0  # Save only if fallback succeeds
+          ignore_errors: true
 
+        - name: Determine which export output to use
+          set_fact:
+            export_final_output: >-
+              {% if export_output.rc is defined and export_output.rc == 0 %}
+                {{ export_output.stdout }}
+              {% elif export_output_fallback.rc is defined and export_output_fallback.rc == 0 %}
+                {{ export_output_fallback.stdout }}
+              {% else %}
+                ""
+              {% endif %}
+
+        - name: Skip further steps if no export output is available
+          meta: end_host
+          when: export_final_output | length == 0
+
+        - name: Save export to temp file
+          tempfile:
+            state: file
+            suffix: routeros_export.rsc
+          register: temp_export_file
+
+        - name: Write export content to temp file
+          copy:
+            content: "{{ export_final_output }}"
+            dest: "{{ temp_export_file.path }}"
+          delegate_to: localhost
+
+        - name: Read new export content
+          slurp:
+            src: "{{ temp_export_file.path }}"
+          register: new_export
+
+        - name: Find existing backups
+          find:
+            paths: "{{ local_backup_directory }}"
+            patterns: "{{ ansible_host | replace('.', '_') }}_*.rsc"
+            recurse: no
+          register: found_exports
+
+        - name: Sort exports by mtime
+          set_fact:
+            existing_exports: "{{ found_exports.files | sort(attribute='mtime', reverse=true) }}"
+
+        - name: Read latest existing export (if any)
+          slurp:
+            src: "{{ existing_exports[0].path }}"
+          register: existing_export
+          when: existing_exports | length > 0
+
+        - name: Normalize exports and compare (skip timestamp line)
+          set_fact:
+            old_hash: "{{ (existing_export.content | b64decode).splitlines()[1:] | join('\n') | hash('sha256') }}"
+            new_hash: "{{ (new_export.content | b64decode).splitlines()[1:] | join('\n') | hash('sha256') }}"
+          when: existing_exports | length > 0
+
+        - name: Set backup_changed if no previous backup exists
+          set_fact:
+            backup_changed: true
+          when: existing_exports | length == 0
+
+        - name: Set backup_changed if export content has changed
+          set_fact:
+            backup_changed: "{{ old_hash != new_hash }}"
+          when: existing_exports | length > 0
+
+        - name: Save backup with timestamp if changed
+          copy:
+            src: "{{ temp_export_file.path }}"
+            dest: "{{ local_backup_directory }}/{{ ansible_host | replace('.', '_') }}_{{ timestamp }}.rsc"
+          when: backup_changed
+
+        - name: Keep only latest 7 backups
+          file:
+            path: "{{ item.path }}"
+            state: absent
+          loop: "{{ existing_exports[7:] }}"
+          when: backup_changed
+
+        - name: Clean up temp export file
+          file:
+            path: "{{ temp_export_file.path }}"
+            state: absent
+
+      rescue:
         - name: A task failed, sending notification to Teams
           include_tasks: notify_teams.yml
           vars:
             failed_task: "{{ ansible_failed_task.name | default('Unknown Task') }}"
             failed_host: "{{ ansible_host }}"
-          when: export_output_fallback.rc != 0  # Notify only if both attempts fail

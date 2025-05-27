@@ -5,17 +5,69 @@
 
   vars:
     backup_directory: "/ansible/backup"
+    timestamp: "{{ lookup('pipe', 'date +%Y%m%d%H%M%S') }}"
 
   tasks:
     - block:
-      - name: "Get backup with IP in filename"
-        ansible.builtin.get_url:
-          url: "http://{{ ansible_host }}/backup.swb"
-          url_username: admin
-          url_password: "{{ password }}"
-          validate_certs: false
-          dest: "{{ backup_directory }}/{{ ansible_host | replace('.', '_') }}_backup.swb"
-        delegate_to: localhost
+        - name: Ensure backup_changed is defined
+          set_fact:
+            backup_changed: false
+
+        - name: Create temp directory
+          tempfile:
+            state: directory
+            suffix: swos
+          register: temp_dir
+
+        - name: Download backup to temp file
+          get_url:
+            url: "http://{{ ansible_host }}/backup.swb"
+            url_username: admin
+            url_password: "{{ password }}"
+            validate_certs: false
+            dest: "{{ temp_dir.path }}/backup.swb"
+          delegate_to: localhost
+
+        - name: Calculate hash of new backup
+          slurp:
+            src: "{{ temp_dir.path }}/backup.swb"
+          register: new_backup
+
+        - name: Find all existing backups
+          find:
+            paths: "{{ backup_directory }}"
+            patterns: "{{ ansible_host | replace('.', '_') }}_*.swb"
+            recurse: no
+          register: found_backups
+
+        - name: Sort backups by mtime (newest first)
+          set_fact:
+            existing_backups: "{{ found_backups.files | sort(attribute='mtime', reverse=true) }}"
+
+        - name: Compare with latest existing backup
+          set_fact:
+            backup_changed: true
+          when: >
+            existing_backups | length == 0 or
+            (lookup('file', existing_backups[0].path) | b64encode != new_backup.content)
+
+        - name: Copy backup with timestamp if changed
+          copy:
+            src: "{{ temp_dir.path }}/backup.swb"
+            dest: "{{ backup_directory }}/{{ ansible_host | replace('.', '_') }}_{{ timestamp }}.swb"
+          when: backup_changed
+
+        - name: Keep only 7 latest backups per device
+          file:
+            path: "{{ item.path }}"
+            state: absent
+          loop: "{{ existing_backups[7:] }}"
+          when: backup_changed
+
+        - name: Clean up temp directory
+          file:
+            path: "{{ temp_dir.path }}"
+            state: absent
 
       rescue:
         - name: A task failed, sending notification to teams
